@@ -1,4 +1,26 @@
-import MFPClientV1 from "./v1/client";
+import Retcode from "./retcode";
+
+export type MFPActionResponse = {
+    status: MFPStatus
+    retcode: Retcode
+    data: any,
+    message: string
+};
+
+export type MFPStatus = 'ok' | 'error';
+
+export type MFPActions =
+    'ping'
+    | 'file_upload_request'
+    | 'file_upload_chunk'
+    | 'file_upload_cancel'
+    | 'get_file_info'
+    | 'get_directory_info'
+    | 'file_download_request'
+    | 'file_download_chunk'
+    | 'file_download_close';
+
+export type MFPEvents = 'instance_log';
 
 export type MFPClientInfo = {
     host: string
@@ -6,22 +28,5 @@ export type MFPClientInfo = {
     username: string,
     password: string,
     secure?: boolean
-    version?: number,
     reconnectOnClose?: boolean
 };
-
-export interface IMFPClient extends EventTarget {
-    connect(): Promise<void>;
-
-    close(): void;
-
-    connected(): boolean;
-
-    closed(): boolean;
-
-    executeAction(action: string, params: any): Promise<any>;
-}
-
-export const clients = {
-    v1: MFPClientV1
-}
