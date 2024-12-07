@@ -1,0 +1,30 @@
+{
+  "name": "mfp-client",
+  "version": "0.1.0",
+  "description": "Node.js client for MCSL Future Protocol",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MCSLTeam/mfp-client-nodejs.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "minecraft",
+    "mcsl",
+    "websocket"
+  ],
+  "author": "mcsl-team",
+  "license": "GPL-3.0-only",
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "nanoid": "^5.0.9"
+  }
+}
