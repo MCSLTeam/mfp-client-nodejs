@@ -1,44 +1,94 @@
-import axios from "axios";
-import {nanoid} from "nanoid";
-import {sleep} from "./src/utils";
-import Retcode from "./src/retcode";
-import {MFPActionResponse, MFPActions, MFPClientInfo, MFPEvents} from "./src/types";
+import {nanoid} from 'nanoid';
+import {sleep} from './src/utils';
+import Retcode from './src/retcode';
+import {
+    MFPActionResponse,
+    MFPActions,
+    MFPClientEvents,
+    MFPClientInfo,
+    MFPServerEvents,
+    MFPServerInfo
+} from './src/types';
+import axios from 'axios';
 
 export default class MFPClient extends EventTarget {
-    public readonly info: MFPClientInfo;
+    public readonly clientInfo: MFPClientInfo;
+    private _serverInfo?: MFPServerInfo;
     private _websocket: WebSocket | null = null;
     private _actionRes: Map<string, MFPActionResponse> = new Map();
-    private _pingInterval: any = undefined;
+    private _pingInterval: any;
+    private readonly _reconnectOnClose: boolean;
 
-    constructor(info: MFPClientInfo) {
+    constructor(info: MFPClientInfo, reconnectOnClose: boolean = true) {
         super();
-        info.secure = info.secure ?? false;
-        info.reconnectOnClose = info.reconnectOnClose ?? true;
-        this.info = info;
+        let secure = false;
+        try {
+            secure = location.protocol == 'https:'
+        } catch (ignored) {
+            // nodejs
+        }
+        info.port = info.port ?? 11451;
+        info.secure = info.secure ?? secure;
+        this.clientInfo = info;
+        this._reconnectOnClose = reconnectOnClose;
     }
 
-    private async login(): Promise<string> {
-        const loginUrl = `${this.info.secure ? 'https' : 'http'}://${this.info.host}:${this.info.port}/login`;
-        return (await axios(loginUrl, {
+    async getServerInfo(): Promise<MFPServerInfo> {
+        if (!this._serverInfo) {
+            const data = (await axios(this.getInfoUrl())).data
+            if (data.apiVersion != 'v1') throw Error('Unsupported api version')
+            this._serverInfo = data
+            this.dispatchEvent(new CustomEvent('info', {
+                detail: data
+            }));
+            return this.getServerInfo()
+        }
+        return this._serverInfo;
+    }
+
+    public async tryConnect(): Promise<boolean> {
+        try {
+            await this.getServerInfo()
+            return true
+        } catch (e) {
+            return false
+        }
+    }
+
+    public async subtoken(expires: number = 30, permissions: string[] = ['*']): Promise<string> {
+        if (this.clientInfo.token.includes('.')) // jwt
+            throw new Error('Not a main token')
+        if (permissions.some(p => !/^(([a-zA-Z-_]+|\*{1,2})\.)*([a-zA-Z-_]+|\*{1,2})$/gm.test(p)))
+            throw new Error('Invalid permission')
+        return (await axios(this.getSubtokenUrl(), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
             },
             data: {
-                usr: this.info.username,
-                pwd: this.info.password
+                token: this.clientInfo.token,
+                expires: expires,
+                permissions: permissions.join(',')
             }
-        })).data;
+        })).data
+    }
+
+    getInfoUrl(): string {
+        return `${this.clientInfo.secure ? 'https' : 'http'}://${this.clientInfo.host}:${this.clientInfo.port}/info`;
+    }
+
+    getSubtokenUrl(): string {
+        return `${this.clientInfo.secure ? 'https' : 'http'}://${this.clientInfo.host}:${this.clientInfo.port}/subtoken`;
     }
 
     getWsUrl(token: string): string {
-        return `${this.info.secure ? 'wss' : 'ws'}://${this.info.host}:${this.info.port}/api/v1?token=${token}`;
+        return `${this.clientInfo.secure ? 'wss' : 'ws'}://${this.clientInfo.host}:${this.clientInfo.port}/api/v1?token=${token}`;
     }
 
     async connect() {
         clearInterval(this._pingInterval)
-        const token = await this.login();
-        this._websocket = new WebSocket(this.getWsUrl(token));
+        await this.getServerInfo()
+        this._websocket = new WebSocket(this.getWsUrl(this.clientInfo.token));
         this._websocket?.addEventListener('open', () => {
             this.dispatchEvent(new CustomEvent('open'));
             console.log(this.logPrefix() + 'Connected to server');
@@ -47,13 +97,13 @@ export default class MFPClient extends EventTarget {
             clearInterval(this._pingInterval)
             this.dispatchEvent(new CustomEvent('close', {
                 detail: {
-                    reconnect: this.info.reconnectOnClose,
+                    reconnect: this._reconnectOnClose,
                     code: e.code,
                     reason: e.reason,
                     wasClean: e.wasClean
                 }
             }));
-            if (this.info.reconnectOnClose && e.reason != 'mfpclient-close') {
+            if (this._reconnectOnClose && e.reason != 'mfpclient-close') {
                 console.log(this.logPrefix() + 'Disconnected from server, reconnecting');
                 try {
                     this.connect();
@@ -116,7 +166,7 @@ export default class MFPClient extends EventTarget {
         return this._websocket?.readyState === WebSocket.CLOSED;
     }
 
-    async executeAction(action: MFPActions, params: any = {}): Promise<MFPActionResponse> {
+    async executeAction(action: MFPActions | string, params: any = {}): Promise<MFPActionResponse> {
         if (!this.connected())
             throw new Error('MFPClient not connected');
         const echo = nanoid(16);
@@ -135,15 +185,17 @@ export default class MFPClient extends EventTarget {
         return res;
     }
 
-    addEventListener(type: MFPEvents, callback: EventListenerOrEventListenerObject | null, options?: AddEventListenerOptions | boolean): void {
+    override addEventListener(type: MFPServerEvents | MFPClientEvents | string, callback: EventListenerOrEventListenerObject | null, options?: AddEventListenerOptions | boolean): void {
         super.addEventListener(type, callback, options);
     }
 
-    removeEventListener(type: MFPEvents, callback: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean): void {
+    override removeEventListener(type: MFPServerEvents | MFPClientEvents | string, callback: EventListenerOrEventListenerObject | null, options?: EventListenerOptions | boolean): void {
         super.removeEventListener(type, callback, options);
     }
 
     private logPrefix() {
-        return `[MFPClientV1 - ${this.info.username}@${this.info.host}:${this.info.port}] `;
+        return `[MFPClientV1 - ${this.clientInfo.host}:${this.clientInfo.port}] `;
     }
 }
+
+export {MFPActionResponse, MFPActions, MFPClientInfo, MFPServerEvents, MFPClientEvents, Retcode}

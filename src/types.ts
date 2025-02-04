@@ -1,4 +1,4 @@
-import Retcode from "./retcode";
+import Retcode from './retcode';
 
 export type MFPActionResponse = {
     status: MFPStatus
@@ -20,13 +20,19 @@ export type MFPActions =
     | 'file_download_chunk'
     | 'file_download_close';
 
-export type MFPEvents = 'instance_log';
+export type MFPServerEvents = 'instance_log';
+
+export type MFPClientEvents = 'open' | 'close' | 'info';
 
 export type MFPClientInfo = {
     host: string
-    port: number
-    username: string,
-    password: string,
+    port?: number
+    token: string
     secure?: boolean
-    reconnectOnClose?: boolean
+};
+
+export type MFPServerInfo = {
+    name: string,
+    version: string,
+    apiVersion: string
 };
