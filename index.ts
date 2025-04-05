@@ -33,29 +33,37 @@ export default class MFPClient extends EventTarget {
         this._reconnectOnClose = reconnectOnClose;
     }
 
-    async getServerInfo(): Promise<MFPServerInfo> {
+    async getServerInfo(timeout: number = 10000): Promise<MFPServerInfo> {
         if (!this._serverInfo) {
-            const data = (await axios(this.getInfoUrl())).data
+            const res = (await axios(this.getInfoUrl(), {
+                timeout,
+                timeoutErrorMessage: 'Timed out while fetching server info'
+            })).data
+            const data: MFPServerInfo = {
+                name: res.name,
+                version: res.version,
+                apiVersion: res.api_version
+            }
             if (data.apiVersion != 'v1') throw Error('Unsupported api version')
             this._serverInfo = data
             this.dispatchEvent(new CustomEvent('info', {
                 detail: data
             }));
-            return this.getServerInfo()
+            return this.getServerInfo(timeout)
         }
         return this._serverInfo;
     }
 
-    public async tryConnect(): Promise<boolean> {
+    public async tryConnect(timeout: number = 10000): Promise<boolean> {
         try {
-            await this.getServerInfo()
+            await this.getServerInfo(timeout)
             return true
         } catch (e) {
             return false
         }
     }
 
-    public async subtoken(expires: number = 30, permissions: string[] = ['*']): Promise<string> {
+    public async subtoken(expires: number = 30, permissions: string[] = ['*'], timeout: number = 10000): Promise<string> {
         if (this.clientInfo.token.includes('.')) // jwt
             throw new Error('Not a main token')
         if (permissions.some(p => !/^(([a-zA-Z-_]+|\*{1,2})\.)*([a-zA-Z-_]+|\*{1,2})$/gm.test(p)))
@@ -65,6 +73,8 @@ export default class MFPClient extends EventTarget {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded'
             },
+            timeout,
+            timeoutErrorMessage: 'Timed out while requesting subtoken',
             data: {
                 token: this.clientInfo.token,
                 expires: expires,
@@ -87,7 +97,7 @@ export default class MFPClient extends EventTarget {
 
     async connect(timeout: number = 10000) {
         clearInterval(this._pingInterval)
-        await this.getServerInfo()
+        await this.getServerInfo(timeout)
         this._websocket = new WebSocket(this.getWsUrl(this.clientInfo.token));
         this._websocket?.addEventListener('open', () => {
             this.dispatchEvent(new CustomEvent('open'));
