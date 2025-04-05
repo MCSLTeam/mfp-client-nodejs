@@ -63,32 +63,8 @@ export default class MFPClient extends EventTarget {
         }
     }
 
-    public async subtoken(expires: number = 30, permissions: string[] = ['*'], timeout: number = 10000): Promise<string> {
-        if (this.clientInfo.token.includes('.')) // jwt
-            throw new Error('Not a main token')
-        if (permissions.some(p => !/^(([a-zA-Z-_]+|\*{1,2})\.)*([a-zA-Z-_]+|\*{1,2})$/gm.test(p)))
-            throw new Error('Invalid permission')
-        return (await axios(this.getSubtokenUrl(), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            timeout,
-            timeoutErrorMessage: 'Timed out while requesting subtoken',
-            data: {
-                token: this.clientInfo.token,
-                expires: expires,
-                permissions: permissions.join(',')
-            }
-        })).data
-    }
-
     getInfoUrl(): string {
         return `${this.clientInfo.secure ? 'https' : 'http'}://${this.clientInfo.host}:${this.clientInfo.port}/info`;
-    }
-
-    getSubtokenUrl(): string {
-        return `${this.clientInfo.secure ? 'https' : 'http'}://${this.clientInfo.host}:${this.clientInfo.port}/subtoken`;
     }
 
     getWsUrl(token: string): string {
@@ -216,4 +192,24 @@ export default class MFPClient extends EventTarget {
     }
 }
 
-export {MFPActionResponse, MFPActions, MFPClientInfo, MFPServerEvents, MFPClientEvents, Retcode}
+async function requestSubtoken(info: MFPClientInfo, expires: number = 30, permissions: string[] = ['*'], timeout: number = 10000): Promise<string> {
+    if (info.token.includes('.')) // jwt
+        throw new Error('Not a main token')
+    if (permissions.some(p => !/^(([a-zA-Z-_]+|\*{1,2})\.)*([a-zA-Z-_]+|\*{1,2})$/gm.test(p)))
+        throw new Error('Invalid permission')
+    return (await axios(`${info.secure ? 'https' : 'http'}://${info.host}:${info.port}/subtoken`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        timeout,
+        timeoutErrorMessage: 'Timed out while requesting subtoken',
+        data: {
+            token: info.token,
+            expires: expires,
+            permissions: permissions.join(',')
+        }
+    })).data
+}
+
+export {MFPActionResponse, MFPActions, MFPClientInfo, MFPServerEvents, MFPClientEvents, Retcode, requestSubtoken}
