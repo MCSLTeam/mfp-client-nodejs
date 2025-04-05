@@ -13,6 +13,12 @@
   "files": [
     "dist"
   ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
   "keywords": [
     "minecraft",
     "mcsl",
