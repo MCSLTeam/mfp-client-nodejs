@@ -1,4 +1,3 @@
-import {nanoid} from 'nanoid';
 import {sleep} from './src/utils';
 import Retcode from './src/retcode';
 import {
@@ -10,6 +9,7 @@ import {
     MFPServerInfo
 } from './src/types';
 import axios from 'axios';
+import {v4} from "uuid";
 
 export default class MFPClient extends EventTarget {
     public readonly clientInfo: MFPClientInfo;
@@ -85,7 +85,7 @@ export default class MFPClient extends EventTarget {
         return `${this.clientInfo.secure ? 'wss' : 'ws'}://${this.clientInfo.host}:${this.clientInfo.port}/api/v1?token=${token}`;
     }
 
-    async connect() {
+    async connect(timeout: number = 10000) {
         clearInterval(this._pingInterval)
         await this.getServerInfo()
         this._websocket = new WebSocket(this.getWsUrl(this.clientInfo.token));
@@ -131,7 +131,7 @@ export default class MFPClient extends EventTarget {
                 }));
             } else if (data.status) {
                 console.debug(this.logPrefix() + 'Action executed: ', data);
-                this._actionRes.set(data.echo, {
+                this._actionRes.set(data.id, {
                     status: data.status,
                     retcode: Retcode.of(data.retcode),
                     data: data.data,
@@ -152,6 +152,14 @@ export default class MFPClient extends EventTarget {
                 }
             }
         }, 60000);
+        const start = Date.now()
+        while (!this.connected()) {
+            if (Date.now() - start > timeout) {
+                console.error(this.logPrefix() + 'Timed out while connecting to server')
+                throw new Error('Timed out while connecting to server')
+            }
+            await sleep(100);
+        }
     }
 
     close() {
@@ -169,19 +177,19 @@ export default class MFPClient extends EventTarget {
     async executeAction(action: MFPActions | string, params: any = {}): Promise<MFPActionResponse> {
         if (!this.connected())
             throw new Error('MFPClient not connected');
-        const echo = nanoid(16);
+        const id = v4()
         const data = JSON.stringify({
             action,
             params,
-            echo
+            id
         });
         console.debug(this.logPrefix() + 'Executing action: ', data);
         this._websocket?.send(data);
-        while (!this._actionRes.has(echo)) {
+        while (!this._actionRes.has(id)) {
             await sleep(100);
         }
-        const res = this._actionRes.get(echo)!;
-        this._actionRes.delete(echo);
+        const res = this._actionRes.get(id)!;
+        this._actionRes.delete(id);
         return res;
     }
 
