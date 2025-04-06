@@ -79,7 +79,7 @@ export default class MFPClient extends EventTarget {
             this.dispatchEvent(new CustomEvent('open'));
             console.log(this.logPrefix() + 'Connected to server');
         });
-        this._websocket?.addEventListener('close', (e) => {
+        this._websocket?.addEventListener('close', async (e) => {
             clearInterval(this._pingInterval)
             this.dispatchEvent(new CustomEvent('close', {
                 detail: {
@@ -90,9 +90,10 @@ export default class MFPClient extends EventTarget {
                 }
             }));
             if (this._reconnectOnClose && e.reason != 'mfpclient-close') {
-                console.log(this.logPrefix() + 'Disconnected from server, reconnecting');
+                console.log(this.logPrefix() + 'Disconnected from server, reconnecting in 5 secs');
+                await sleep(5000)
                 try {
-                    this.connect();
+                    await this.connect();
                 } catch (e) {
                     console.error(this.logPrefix() + 'Failed reconnecting to server: ', e);
                 }
@@ -139,8 +140,13 @@ export default class MFPClient extends EventTarget {
             }
         }, 60000);
         const start = Date.now()
+        let err = false
+        this._websocket.onerror = () => err = true
         while (!this.connected()) {
-            if (Date.now() - start > timeout) {
+            if (err) {
+                console.error(this.logPrefix() + 'Error while connecting to server')
+                throw new Error('Error while connecting to server')
+            } else if (Date.now() - start > timeout) {
                 console.error(this.logPrefix() + 'Timed out while connecting to server')
                 throw new Error('Timed out while connecting to server')
             }
